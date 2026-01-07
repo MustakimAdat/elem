@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sticky Task Board</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Scrollbar for notes */
+        .note-content::-webkit-scrollbar { width: 4px; }
+        .note-content::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.1); border-radius: 4px; }
+        
+        /* Smooth fade in for new notes */
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop { animation: popIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        /* Hide selection during drag to prevent blue highlight text */
+        .select-none { user-select: none; }
+    </style>
+</head>
+<body class="bg-gray-100 overflow-hidden relative h-screen w-screen font-sans text-gray-800">
+
+    <div class="absolute top-6 left-6 z-50 flex flex-col gap-4">
+        <h1 class="text-3xl font-bold text-gray-800 tracking-tight">Task Board</h1>
+        <p class="text-sm text-gray-500">Double click to edit • Drag to organize</p>
+        
+        <button onclick="addNote()" 
+            class="group flex items-center justify-center gap-2 bg-black text-white px-6 py-3 rounded-full shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>New Task</span>
+        </button>
+
+        <button onclick="clearAll()" 
+            class="text-xs text-red-400 hover:text-red-600 underline text-left ml-2">
+            Clear Board
+        </button>
+    </div>
+
+    <div id="board" class="w-full h-full relative cursor-grab active:cursor-grabbing bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:20px_20px]">
+        </div>
+
+    <script>
+        // --- Configuration ---
+        const COLORS = [
+            'bg-yellow-200', 
+            'bg-green-200', 
+            'bg-blue-200', 
+            'bg-pink-200', 
+            'bg-purple-200',
+            'bg-orange-200'
+        ];
+        
+        let notes = JSON.parse(localStorage.getItem('sticky-notes')) || [];
+        let zIndexCounter = 10; // Ensure new clicked notes pop to front
+
+        // --- Core Functions ---
+
+        function init() {
+            const board = document.getElementById('board');
+            board.innerHTML = ''; // Clear board to re-render
+            
+            if (notes.length === 0) {
+                // Add a welcome note if empty
+                createNoteObject("Welcome! 👋\n\n- Drag me around\n- Double click to edit\n- Click X to delete", 100, 100);
+            } else {
+                notes.forEach(renderNote);
+            }
+        }
+
+        function createNoteObject(text = "", x = null, y = null) {
+            const id = Date.now().toString();
+            // Random position if not specified (with slight scatter)
+            const posX = x !== null ? x : 300 + (Math.random() * 50);
+            const posY = y !== null ? y : 100 + (Math.random() * 50);
+            const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+
+            const note = { id, text, x: posX, y: posY, color };
+            notes.push(note);
+            saveData();
+            renderNote(note);
+        }
+
+        function addNote() {
+            createNoteObject("New Task");
+        }
+
+        function deleteNote(id) {
+            notes = notes.filter(note => note.id !== id);
+            document.getElementById(id).remove();
+            saveData();
+        }
+
+        function updateNoteText(id, newText) {
+            const noteIndex = notes.findIndex(n => n.id === id);
+            if (noteIndex > -1) {
+                notes[noteIndex].text = newText;
+                saveData();
+            }
+        }
+
+        function updateNotePosition(id, x, y) {
+            const noteIndex = notes.findIndex(n => n.id === id);
+            if (noteIndex > -1) {
+                notes[noteIndex].x = x;
+                notes[noteIndex].y = y;
+                saveData();
+            }
+        }
+
+        function clearAll() {
+            if(confirm("Delete all tasks?")) {
+                notes = [];
+                localStorage.removeItem('sticky-notes');
+                document.getElementById('board').innerHTML = '';
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem('sticky-notes', JSON.stringify(notes));
+        }
+
+        // --- Rendering Logic ---
+
+        function renderNote(noteData) {
+            const el = document.createElement('div');
+            el.id = noteData.id;
+            el.className = `absolute w-64 h-64 p-4 shadow-lg rounded-xl flex flex-col justify-between ${noteData.color} animate-pop transition-shadow hover:shadow-2xl`;
+            el.style.left = `${noteData.x}px`;
+            el.style.top = `${noteData.y}px`;
+            el.style.zIndex = zIndexCounter++;
+            
+            // Header: Drag Handle & Delete
+            const header = document.createElement('div');
+            header.className = "flex justify-between items-center mb-2 cursor-move opacity-50 hover:opacity-100 transition-opacity";
+            header.innerHTML = `
+                <div class="drag-handle w-full h-6 mr-2"></div>
+                <button onclick="deleteNote('${noteData.id}')" class="text-gray-600 hover:text-red-500 hover:bg-white/50 rounded-full p-1 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            `;
+
+            // Content Area (Textarea)
+            const textarea = document.createElement('textarea');
+            textarea.className = "note-content w-full h-full bg-transparent resize-none outline-none text-gray-800 font-medium leading-relaxed placeholder-gray-500/50";
+            textarea.value = noteData.text;
+            textarea.placeholder = "Write something...";
+            textarea.addEventListener('input', (e) => updateNoteText(noteData.id, e.target.value));
+            
+            // Bring to front on focus
+            textarea.addEventListener('focus', () => {
+                el.style.zIndex = ++zIndexCounter;
+            });
+
+            el.appendChild(header);
+            el.appendChild(textarea);
+
+            // --- Drag Functionality (Mouse & Touch) ---
+            const handle = header.querySelector('.drag-handle');
+            
+            const startDrag = (e) => {
+                // Prevent bringing up keyboard on mobile if touching handle
+                if (e.cancelable) e.preventDefault(); 
+                
+                el.style.zIndex = ++zIndexCounter;
+                el.classList.add('cursor-grabbing');
+                
+                const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+                const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
+
+                // Calculate offset from top-left of note
+                const rect = el.getBoundingClientRect();
+                const offsetX = clientX - rect.left;
+                const offsetY = clientY - rect.top;
+
+                const onMove = (moveEvent) => {
+                    const moveX = moveEvent.type.includes('mouse') ? moveEvent.clientX : moveEvent.touches[0].clientX;
+                    const moveY = moveEvent.type.includes('mouse') ? moveEvent.clientY : moveEvent.touches[0].clientY;
+
+                    el.style.left = `${moveX - offsetX}px`;
+                    el.style.top = `${moveY - offsetY}px`;
+                };
+
+                const onEnd = () => {
+                    el.classList.remove('cursor-grabbing');
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onEnd);
+                    document.removeEventListener('touchmove', onMove);
+                    document.removeEventListener('touchend', onEnd);
+                    
+                    // Save final position relative to viewport (simplified)
+                    updateNotePosition(noteData.id, parseInt(el.style.left), parseInt(el.style.top));
+                };
+
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onEnd);
+                document.addEventListener('touchmove', onMove, { passive: false });
+                document.addEventListener('touchend', onEnd);
+            };
+
+            // Attach drag to the header area only
+            header.addEventListener('mousedown', startDrag);
+            header.addEventListener('touchstart', startDrag, { passive: false });
+
+            document.getElementById('board').appendChild(el);
+        }
+
+        // Initialize App
+        window.onload = init;
+
+    </script>
+</body>
+</html>
